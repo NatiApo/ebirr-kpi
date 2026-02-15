@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adama EBIRR KPI System</title>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<style>
+body { font-family:Poppins,sans-serif; background:linear-gradient(135deg,#e0f7fa,#b2dfdb); margin:0;padding:20px;}
+.logo{ display:block; margin:0 auto 20px; width:120px;height:120px; border-radius:50%; box-shadow:0 5px 20px rgba(0,0,0,0.3);}
+.card{ background:white; padding:30px; margin:20px auto; border-radius:20px; box-shadow:0 15px 40px rgba(0,0,0,0.2); max-width:1200px;width:95%; transition:.3s;}
+.card:hover{transform:translateY(-5px);}
+h2{color:#00c853;text-align:center;margin-bottom:20px;}
+input,select,textarea{ width:100%; padding:10px; margin-top:8px; border-radius:12px; border:1px solid #ccc; box-sizing:border-box;}
+button{ padding:12px; width:100%; margin-top:12px; border:none; border-radius:12px; background:#00c853; color:white; font-weight:bold; cursor:pointer;}
+button:hover{ box-shadow:0 10px 25px rgba(0,200,83,.4); transform:translateY(-2px);}
+.hidden{display:none}
+.customer-card{ background:#f1f8f7; padding:15px; margin-bottom:15px; border-radius:15px; box-shadow:0 5px 15px rgba(0,0,0,0.1); display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px;}
+textarea{resize:none;}
+#kpiTableContainer{ max-height:400px; overflow-y:auto; margin-top:20px;}
+#kpiTable{ width:100%; border-collapse:collapse;}
+#kpiTable th, #kpiTable td{ padding:8px; border:1px solid #ccc; text-align:center;}
+#kpiTable th{ background:#00c853; color:white; position:sticky; top:0; z-index:1;}
+#kpiTable tr:nth-child(even){background:#f1f8f7;}
+canvas{ max-width:100%; margin-bottom:20px;}
+#map{width:100%;height:500px;border-radius:20px;}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="card" id="loginPage">
+<img src="https://i.ibb.co/BHMpvLFh/Banner.png" class="logo">
+<h2>Login</h2>
+<input id="email" placeholder="Email">
+<input id="password" type="password" placeholder="Password">
+<button onclick="login()">Login</button>
+</div>
+
+<!-- ADMIN DASHBOARD -->
+<div class="card hidden" id="adminDashboard">
+<img src="https://i.ibb.co/BHMpvLFh/Banner.png" class="logo">
+<h2>Admin Dashboard</h2>
+<button onclick="showPage('registerPage')">Register Staff</button>
+<button onclick="showPage('staffList');loadStaff()">View Staff</button>
+<button onclick="showPage('kpiView');loadKPI()">View KPI</button>
+<button onclick="showPage('staffMap');loadStaffMap()">View Staff Locations</button>
+<button onclick="logout()">Logout</button>
+</div>
+
+<!-- REGISTER -->
+<div class="card hidden" id="registerPage">
+<img src="https://i.ibb.co/BHMpvLFh/Banner.png" class="logo">
+<h2>Register Staff</h2>
+<input id="rname" placeholder="Name">
+<input id="remail" placeholder="Email">
+<input id="rpass" placeholder="Password">
+<select id="rrole">
+<option value="user">User</option>
+<option value="admin">Admin</option>
+</select>
+<button onclick="registerStaff()">Register</button>
+<button onclick="showPage('adminDashboard')">Back</button>
+</div>
+
+<!-- STAFF LIST -->
+<div class="card hidden" id="staffList">
+<img src="https://i.ibb.co/BHMpvLFh/Banner.png" class="logo">
+<h2>Staff List</h2>
+<table>
+<thead>
+<tr><th>Name</th><th>Email</th><th>Role</th><th>Action</th></tr>
+</thead>
+<tbody id="staffTable"></tbody>
+</table>
+<button onclick="showPage('adminDashboard')">Back</button>
+</div>
+
+<!-- KPI VIEW -->
+<div class="card hidden" id="kpiView">
+<img src="https://i.ibb.co/BHMpvLFh/Banner.png" class="logo">
+<h2>KPI Reports (All Staff)</h2>
+<canvas id="chart"></canvas>
+<button onclick="exportKPIToExcel()">📥 Export KPI to Excel</button>
+<div id="kpiTableContainer">
+<table id="kpiTable">
+<thead>
+<tr>
+<th>Staff</th>
+<th>Branch</th>
+<th>Customer</th>
+<th>Phone</th>
+<th>Date</th>
+<th>Reg</th>
+<th>Upd</th>
+<th>App</th>
+<th>PIN</th>
+<th>Delete</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+</div>
+<button onclick="showPage('adminDashboard')">Back</button>
+</div>
+
+<!-- STAFF MAP -->
+<div class="card hidden" id="staffMap">
+<img src="https://i.ibb.co/BHMpvLFh/Banner.png" class="logo">
+<h2>Staff Locations (GPS Active Only)</h2>
+<div id="map"></div>
+<button onclick="showPage('adminDashboard')">Back</button>
+</div>
+
+<!-- STAFF DASHBOARD -->
+<div class="card hidden" id="staffDashboard">
+<img src="https://i.ibb.co/BHMpvLFh/Banner.png" class="logo">
+<h2>Submit Customer KPI</h2>
+<input type="date" id="date">
+<input id="staff" placeholder="Your Name">
+<input id="branch" placeholder="Branch Name">
+<h3>Daily Activity</h3>
+<input id="stickers" type="number" placeholder="Total Stickers">
+<input id="shopVisit" type="number" placeholder="Total Shop Visit">
+<input id="pedestrianVisit" type="number" placeholder="Total Pedestrian Labels">
+<div id="customers"></div>
+<button onclick="addCustomer()">➕ Add Customer</button>
+<h3>Customer Feedback</h3>
+<textarea id="customerFeedback" placeholder="Enter feedback here..." rows="4"></textarea>
+<h3>Totals: <span id="totals">Reg:0 | Upd:0 | App:0 | PIN:0</span></h3>
+<button onclick="submitAllKPI()">Submit All KPI</button>
+<button onclick="shareKPIReport()">Share My KPI Report</button>
+<button onclick="logout()">Logout</button>
+</div>
+
+<script>
+firebase.initializeApp({
+apiKey:"AIzaSyCXyyloL62I-Mc7bqLSqjEoc3XETzXHgSc",
+authDomain:"marketing-kpi-system.firebaseapp.com",
+projectId:"marketing-kpi-system"
+});
+
+const auth=firebase.auth();
+const db=firebase.firestore();
+
+function showPage(id){
+  document.querySelectorAll('.card').forEach(c=>c.classList.add('hidden'));
+  document.getElementById(id).classList.remove('hidden');
+}
+
+function login(){
+  auth.signInWithEmailAndPassword(val("email"),val("password"))
+  .then(r=>db.collection("users").doc(r.user.uid).get())
+  .then(doc=>{
+    if(doc.data().role==="admin") showPage("adminDashboard");
+    else showPage("staffDashboard");
+  });
+}
+
+function logout(){
+  auth.signOut();
+  showPage("loginPage");
+}
+
+async function registerStaff(){
+  let u=await auth.createUserWithEmailAndPassword(val("remail"),val("rpass"));
+  await db.collection("users").doc(u.user.uid).set({
+    name:val("rname"),
+    email:val("remail"),
+    role:val("rrole")
+  });
+  alert("Staff Registered");
+}
+
+function loadStaff(){
+  let t=document.getElementById("staffTable");
+  t.innerHTML="";
+  db.collection("users").get().then(s=>{
+    s.forEach(d=>{
+      let x=d.data();
+      t.innerHTML+=`<tr>
+<td>${x.name}</td>
+<td>${x.email}</td>
+<td>${x.role}</td>
+<td><button onclick="deleteStaff('${d.id}')">Delete</button></td>
+</tr>`;
+    });
+  });
+}
+
+function deleteStaff(id){
+  if(confirm("Delete Staff?")){
+    db.collection("users").doc(id).delete().then(loadStaff);
+  }
+}
+
+function loadKPI(){
+  const tbody=document.querySelector("#kpiTable tbody");
+  tbody.innerHTML="";
+  db.collection("kpi").orderBy("created","desc").get().then(snap=>{
+    snap.forEach(doc=>{
+      const d=doc.data();
+      const row=document.createElement("tr");
+      row.innerHTML=`
+<td>${d.staff||""}</td>
+<td>${d.branch||""}</td>
+<td>${d.customer||""}</td>
+<td>${d.phone||""}</td>
+<td>${d.date||""}</td>
+<td>${d.registration||0}</td>
+<td>${d.updates||0}</td>
+<td>${d.app||0}</td>
+<td>${d.pin||0}</td>
+<td><button onclick="deleteKPI('${doc.id}')">Delete</button></td>
+`;
+      tbody.appendChild(row);
+    });
+  });
+}
+
+function deleteKPI(id){
+  if(confirm("Delete this KPI?")){
+    db.collection("kpi").doc(id).delete().then(loadKPI);
+  }
+}
+
+function val(id){return document.getElementById(id).value;}
+
+auth.onAuthStateChanged(u=>{
+  if(!u) showPage("loginPage");
+});
+
+// EXPORT KPI TO EXCEL
+function exportKPIToExcel(){
+  const table = document.getElementById("kpiTable");
+  const wb = XLSX.utils.book_new();
+  const ws_data = [];
+  const headers = [];
+  table.querySelectorAll("thead th").forEach(th => {
+    if(th.innerText !== "Delete") headers.push(th.innerText);
+  });
+  ws_data.push(headers);
+  table.querySelectorAll("tbody tr").forEach(tr => {
+    const row = [];
+    tr.querySelectorAll("td").forEach((td,index) => {
+      if(index !== 9) row.push(td.innerText);
+    });
+    ws_data.push(row);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+  XLSX.utils.book_append_sheet(wb, ws, "KPI_Report");
+  XLSX.writeFile(wb, `EBIRR_KPI_Report_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+// ===== VIEW STAFF LOCATIONS MAP (ONLY GPS ACTIVE) =====
+let map;
+function loadStaffMap(){
+  showPage('staffMap');
+  if(map) map.remove();
+
+  map = L.map('map').setView([8.55, 39.27], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
+
+  db.collection("users").get().then(snapshot=>{
+    let bounds = [];
+    snapshot.forEach(doc=>{
+      const data = doc.data();
+      // Only show staff with GPS coordinates
+      if(data.lat && data.lng){
+        const marker = L.marker([data.lat, data.lng]).addTo(map);
+        marker.bindPopup(`<b>${data.name}</b><br>${data.role}<br>${data.email}`);
+        bounds.push([data.lat, data.lng]);
+      }
+    });
+    // Fit map to all markers if any
+    if(bounds.length) map.fitBounds(bounds, {padding:[50,50]});
+  });
+}
+</script>
+</body>
+</html>
